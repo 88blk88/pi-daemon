@@ -3,16 +3,32 @@
 // A channel is a messaging surface (Telegram, Discord, IRC, etc.)
 // that bridges external messages to the Pi agent and back.
 
+/** A file or image attached to a message */
+export interface Attachment {
+  /** Original filename */
+  filename: string;
+  /** Remote URL (set by channel before download) */
+  url?: string;
+  /** Local file path (set after download or for outgoing files) */
+  path?: string;
+  /** MIME type, e.g. "image/png", "application/pdf" */
+  mimeType?: string;
+}
+
 export interface IncomingMessage {
   channelId: string;
   senderId: string;
   text?: string;
-  // Future: images, voice, files
+  attachments?: Attachment[];
+  /** Parsed command name without slash, e.g. "new", "status" */
+  command?: string;
+  /** Arguments after the command, e.g. "/model gpt-4" → commandArgs = "gpt-4" */
+  commandArgs?: string;
 }
 
 export interface ChannelResponse {
   text: string;
-  // Future: images, files, structured content
+  attachments?: Attachment[];
 }
 
 export type OnMessage = (message: IncomingMessage) => Promise<ChannelResponse>;
@@ -34,5 +50,7 @@ export type ChannelFactory = (config: ChannelConfig) => Channel;
 /** Parsed channel-config.toml with env vars resolved */
 export interface ChannelConfig {
   enabled: boolean;
+  /** Injected by core — directory for saving incoming file attachments */
+  downloadDir?: string;
   [key: string]: unknown;
 }

@@ -63,6 +63,89 @@ type ChannelFactory = (config: ChannelConfig) => Channel;
 The `onMessage` callback routes incoming messages to the channel's Pi session
 and returns a response. Channels handle their own platform-specific formatting.
 
+## Platform API comparison (2026-03-24)
+
+Researched Telegram Bot API (v9.5) and Discord Bot API to inform interface evolution.
+
+### Message capabilities
+
+| Capability | Telegram Bot API | Discord Bot API | Our status |
+|---|---|---|---|
+| Send text | `sendMessage` (4096 chars) | `channel.send` (2000 chars) | ✅ Both |
+| Receive text | ✅ | ✅ | ✅ Both |
+| Markdown/formatting | Markdown/HTML parse modes | Native markdown rendering | ✅ Both |
+| Send files | `sendDocument` (50MB, 2GB local) | `AttachmentBuilder` (25MB, 100MB boosted) | ❌ |
+| Receive files | `file_id` → `getFile` → download URL | `msg.attachments` → URL | ❌ |
+| Send images | `sendPhoto` | embed or attachment | ❌ |
+| Receive images | `photo` array on message | `msg.attachments` | ❌ |
+| Edit messages | `editMessageText` | `msg.edit()` | ❌ |
+| Delete messages | `deleteMessage` | `msg.delete()` | ❌ |
+| Reply to specific msg | `reply_to_message_id` | `msg.reply()` | ⚠️ Discord only |
+| Typing indicator | `sendChatAction("typing")` | `channel.sendTyping()` | ✅ Both (channel code) |
+| Reactions | Limited (bot can set) | Full (`msg.react()`) | ❌ |
+| Message streaming | `sendMessageDraft` (API 9.3+) | Edit message repeatedly | ❌ |
+
+### Rich content
+
+| Capability | Telegram | Discord |
+|---|---|---|
+| Inline keyboards/buttons | `InlineKeyboardMarkup` | `ActionRowBuilder` + `ButtonBuilder` |
+| Embeds | No native equivalent | `EmbedBuilder` (rich cards) |
+| Threads | Forum topics (API 9.3+) | Native threads (`startThread()`) |
+| Slash commands | `BotCommand` + menu | Full interaction API with autocomplete |
+| Voice | `sendVoice`, `sendVideoNote` | Voice channels (streaming) |
+
+### Evolution plan (tiers)
+
+**Tier 1 — blocks real functionality (do next):**
+- File/image attachments in and out (Pi tools create files; users send screenshots)
+- Message editing for streaming responses (TG: `sendMessageDraft`, Discord: edit)
+
+**Tier 2 — quality of life:**
+- Slash/bot commands: `/new`, `/status`, `/model` (TG: `BotCommand`, Discord: interactions)
+- Threads for conversation isolation (Discord native, TG forum topics)
+
+**Tier 3 — someday:**
+- Embeds, buttons, reactions, voice
+
+### Interface evolution path
+
+**Current (v0.2–0.3): Option A — extend with attachments**
+```typescript
+interface IncomingMessage {
+  channelId: string;
+  senderId: string;
+  text?: string;
+  attachments?: Attachment[];
+  command?: string;
+}
+
+interface ChannelResponse {
+  text: string;
+  attachments?: Attachment[];
+}
+
+interface Attachment {
+  filename: string;
+  url?: string;
+  path?: string;
+  mimeType?: string;
+}
+```
+
+**Future: Option B — streaming callback (when we tackle message streaming)**
+```typescript
+type OnMessage = (message: IncomingMessage, reply: ReplyHandle) => Promise<void>;
+
+interface ReplyHandle {
+  sendText(text: string): Promise<void>;
+  updateText(text: string): Promise<void>;  // edit last msg
+  sendFile(path: string, filename?: string): Promise<void>;
+}
+```
+
+Option A doesn't block Option B — we can migrate when streaming becomes priority.
+
 ## Open questions
 - Pi auth token expiry/refresh behavior — untested with long-running daemon
 - Ollama fallback design

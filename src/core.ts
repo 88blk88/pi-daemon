@@ -14,7 +14,9 @@ import type { LoadedConfig, ChannelEntry, DaemonConfig } from "./config.js";
 import { loadConfig } from "./config.js";
 import {
   createChannelSession,
+  resetChannelSession,
   sendMessage,
+  getSessionInfo,
   disposeSession,
 } from "./pi-adapter.js";
 
@@ -28,16 +30,54 @@ let watcher: FSWatcher | null = null;
 let projectDir: string;
 let daemonConfig: DaemonConfig;
 
+// ── Command handling ─────────────────────────────────────────
+
+async function handleCommand(
+  msg: IncomingMessage,
+): Promise<ChannelResponse | null> {
+  if (!msg.command) return null;
+
+  switch (msg.command) {
+    case "new": {
+      try {
+        await resetChannelSession(msg.channelId, daemonConfig);
+        return { text: "🐉 New session started. Fresh slate!" };
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`[core] Failed to reset session for ${msg.channelId}:`, errMsg);
+        return { text: `🐉💥 Failed to reset session: ${errMsg}` };
+      }
+    }
+
+    case "status": {
+      const info = getSessionInfo(msg.channelId);
+      return { text: `🐉 Status\n\n${info}` };
+    }
+
+    default:
+      // Unknown command — fall through to normal message handling
+      return null;
+  }
+}
+
 // ── Message routing ──────────────────────────────────────────
 
 async function handleMessage(msg: IncomingMessage): Promise<ChannelResponse> {
+  // Commands take priority
+  const commandResponse = await handleCommand(msg);
+  if (commandResponse) return commandResponse;
+
   const text = msg.text?.trim();
-  if (!text) {
+  if (!text && !msg.attachments?.length) {
     return { text: "🐉 I can only read text messages for now." };
   }
 
   try {
-    const response = await sendMessage(msg.channelId, text);
+    const response = await sendMessage(
+      msg.channelId,
+      text ?? "(no text — see attached files)",
+      msg.attachments,
+    );
     return { text: response };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -78,8 +118,12 @@ async function startChannel(entry: ChannelEntry): Promise<void> {
       return;
     }
 
+    // Inject downloadDir so channels know where to save incoming files
+    const downloadDir = resolve(daemonConfig.workDir, "incoming", channelId);
+
     const config: ChannelConfig = {
       enabled: true,
+      downloadDir,
       ...entry.config,
     };
 

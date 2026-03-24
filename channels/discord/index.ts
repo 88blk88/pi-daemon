@@ -2,23 +2,27 @@
 // ---------------------------------------------------------
 
 import {
+  AttachmentBuilder,
   Client,
   GatewayIntentBits,
   Partials,
   type Message as DiscordMessage,
 } from "discord.js";
 import type {
+  Attachment,
   Channel,
   ChannelConfig,
   ChannelFactory,
   OnMessage,
 } from "../../src/channel.js";
+import { downloadFile, downloadPath } from "../../src/download.js";
 
 interface DiscordConfig extends ChannelConfig {
   token: string;
   allowedUsers: string[];
   allowedChannels: string[];
   respondToReplies: boolean;
+  downloadDir: string;
 }
 
 function validateConfig(raw: ChannelConfig): DiscordConfig {
@@ -26,10 +30,13 @@ function validateConfig(raw: ChannelConfig): DiscordConfig {
   const allowedUsers = (raw.allowedUsers as string[] | undefined) ?? [];
   const allowedChannels = (raw.allowedChannels as string[] | undefined) ?? [];
   const respondToReplies = (raw.respondToReplies as boolean | undefined) ?? true;
+  const downloadDir = raw.downloadDir as string | undefined;
 
   if (!token) throw new Error("Discord channel: missing 'token' in config.");
   if (!allowedUsers.length)
     throw new Error("Discord channel: missing 'allowedUsers' in config.");
+  if (!downloadDir)
+    throw new Error("Discord channel: missing 'downloadDir' (should be injected by core).");
 
   // Coerce to strings — Discord IDs are snowflakes (big ints), TOML may parse them as numbers
   return {
@@ -38,8 +45,55 @@ function validateConfig(raw: ChannelConfig): DiscordConfig {
     allowedUsers: allowedUsers.map(String),
     allowedChannels: allowedChannels.map(String),
     respondToReplies,
+    downloadDir,
   };
 }
+
+// ── Command parsing ──────────────────────────────────────────
+
+interface ParsedCommand {
+  command: string;
+  args: string;
+}
+
+function parseCommand(text: string): ParsedCommand | null {
+  const match = text.match(/^\/([a-zA-Z0-9_]+)\s*(.*)/s);
+  if (!match) return null;
+  return { command: match[1].toLowerCase(), args: match[2].trim() };
+}
+
+// ── Attachment extraction ────────────────────────────────────
+
+async function extractAttachments(
+  msg: DiscordMessage,
+  downloadDir: string,
+): Promise<Attachment[]> {
+  const attachments: Attachment[] = [];
+
+  for (const [, discordAtt] of msg.attachments) {
+    try {
+      const filename = discordAtt.name ?? "file";
+      const destPath = downloadPath(downloadDir, filename);
+      await downloadFile(discordAtt.url, destPath);
+
+      attachments.push({
+        filename,
+        url: discordAtt.url,
+        path: destPath,
+        mimeType: discordAtt.contentType ?? undefined,
+      });
+    } catch (err) {
+      console.error(
+        `[discord] Failed to download attachment "${discordAtt.name}":`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  return attachments;
+}
+
+// ── Channel factory ──────────────────────────────────────────
 
 function createDiscordChannel(raw: ChannelConfig): Channel {
   const config = validateConfig(raw);
@@ -110,15 +164,22 @@ function createDiscordChannel(raw: ChannelConfig): Channel {
         if (processingMessages.has(msg.id)) return;
         processingMessages.add(msg.id);
 
-        const text = stripMention(msg.content, client.user?.id);
+        const rawText = stripMention(msg.content, client.user?.id);
+        const parsed = parseCommand(rawText);
+        const text = parsed ? parsed.args : rawText;
 
-        if (!text) {
-          await msg.reply("🐉 I can only read text messages for now.");
+        // Extract attachments
+        const attachments = await extractAttachments(msg, config.downloadDir);
+
+        if (!text && !attachments.length && !parsed) {
+          await msg.reply("🐉 I can only read text and file messages for now.");
+          processingMessages.delete(msg.id);
           return;
         }
 
-        const preview = text.length > 100 ? `${text.slice(0, 100)}...` : text;
-        console.log(`[discord] Message from ${msg.author.username}: ${preview}`);
+        const preview = rawText.length > 100 ? `${rawText.slice(0, 100)}...` : rawText;
+        const attachInfo = attachments.length ? ` [+${attachments.length} file(s)]` : "";
+        console.log(`[discord] Message from ${msg.author.username}: ${preview}${attachInfo}`);
 
         // Typing indicator
         const channel = msg.channel;
@@ -143,17 +204,40 @@ function createDiscordChannel(raw: ChannelConfig): Channel {
           const response = await onMessage({
             channelId: "discord",
             senderId: msg.author.id,
-            text,
+            text: text || undefined,
+            attachments: attachments.length ? attachments : undefined,
+            command: parsed?.command,
+            commandArgs: parsed?.args || undefined,
           });
 
+          // Send response attachments
+          const files: AttachmentBuilder[] = [];
+          if (response.attachments?.length) {
+            for (const att of response.attachments) {
+              if (!att.path) continue;
+              files.push(
+                new AttachmentBuilder(att.path).setName(att.filename),
+              );
+            }
+          }
+
+          // Send text response (with files on first message)
           const chunks = splitMessage(response.text, 2000);
 
           for (let i = 0; i < chunks.length; i++) {
             if (i === 0) {
-              await msg.reply(chunks[i]);
+              await msg.reply({
+                content: chunks[i],
+                files: files.length ? files : undefined,
+              });
             } else if ("send" in channel) {
               await channel.send(chunks[i]);
             }
+          }
+
+          // If no text but files, send files alone
+          if (!response.text && files.length) {
+            await msg.reply({ files });
           }
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -192,8 +276,6 @@ function isMentioned(msg: DiscordMessage, client: Client): boolean {
 
 function isReplyToBot(msg: DiscordMessage, client: Client): boolean {
   if (!client.user || !msg.reference) return false;
-  // msg.reference.messageId exists, but we need to check who authored that message.
-  // The replied-to message may be in the cache via msg.mentions.repliedUser.
   return msg.mentions.repliedUser?.id === client.user.id;
 }
 
