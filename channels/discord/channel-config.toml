@@ -1,0 +1,15 @@
+id = "discord"
+enabled = true
+token = "$DISCORD_BOT_TOKEN"
+
+# Your Discord user ID (enable Developer Mode in Discord settings,
+# right-click your name → Copy User ID)
+allowedUsers = ["755546220289589278"]
+
+# Optional: restrict to specific channel IDs.
+# If empty, the bot responds in any channel/DM where it's mentioned or DMed.
+# allowedChannels = []
+
+# Respond when someone replies to the bot's message (even without @mention).
+# Default: true
+# respondToReplies = true

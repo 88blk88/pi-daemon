@@ -113,7 +113,7 @@ and returns a response. Channels handle their own platform-specific formatting.
 - [x] Telegram channel extracted
 
 ### v0.3 — validate & harden
-- [ ] Second channel (Discord or IRC) to validate architecture
+- [x] Second channel (Discord) to validate architecture
 - [ ] Session management commands (/new, /status)
 - [ ] Image/file support in channel interface
 - [ ] Structured logging
