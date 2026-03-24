@@ -1,0 +1,3 @@
+[daemon]
+workDir = "~/.pi/workspace"
+agentDir = "~/.pi/agent"

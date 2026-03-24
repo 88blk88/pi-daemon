@@ -1,0 +1,4 @@
+id = "telegram"
+enabled = true
+token = "$TELEGRAM_BOT_TOKEN"
+allowedUsers = [5928990717]
