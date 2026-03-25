@@ -216,7 +216,12 @@ Option A doesn't block Option B — we can migrate when streaming becomes priori
 - [ ] Morning briefing / scheduled check-ins
 - [ ] Ambient system awareness (systemd, disk, git)
 
-### v0.5 — smarter context
+### v0.5 — integrations
+- [ ] MCP server — expose daemon capabilities via Model Context Protocol
+- [ ] MCP client — consume external MCP servers for tool extensibility
+- [ ] Home Assistant integration (via MCP or REST)
+
+### v0.6 — smarter context
 - [ ] Per-channel context management (log + context + compaction)
 - [ ] Session learning / conversation review
 - [ ] Cost/token tracking
