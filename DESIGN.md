@@ -148,8 +148,10 @@ Option A doesn't block Option B — we can migrate when streaming becomes priori
 
 ## Open questions
 - Pi auth token expiry/refresh behavior — untested with long-running daemon
-- Ollama fallback design
+- Model routing design (simple→cheap model, complex→expensive model)
 - Cost monitoring — no per-conversation cost tracking yet
+- MCP (Model Context Protocol) integration — expose daemon capabilities as MCP server,
+  consume external MCP servers for tool extensibility
 - Whether memory updates should be automatic
 - Can Pi sessions be forked? (e.g. fresh session for a task without polluting channel context)
 - Project naming (pre-open-source)
@@ -197,10 +199,10 @@ Option A doesn't block Option B — we can migrate when streaming becomes priori
 
 ### v0.3 — validate & harden
 - [x] Second channel (Discord) to validate architecture
-- [ ] Session management commands (/new, /status)
-- [ ] Image/file support in channel interface
+- [x] Session management commands (/new, /status)
+- [x] Image/file support in channel interface
 - [ ] Structured logging
-- [ ] Ollama fallback
+- [ ] Model routing (simple→local/cheap, complex→cloud/expensive)
 - [ ] Hot reload: bust Node import cache (append `?t=Date.now()` to dynamic import URL)
 - [ ] Shutdown timeout — force exit after 10s if `stopAll()` hangs
 - [ ] Share one `DefaultResourceLoader` across channels instead of creating per-channel
